@@ -50,56 +50,77 @@ Finally, the program will output a diagnostic code and immediately halt. This fi
 After providing 1 to the only input instruction and passing all the tests, what diagnostic code does the program produce?
 
 """
-  import AdventOfCode2019
+  def intcode(codes, inputs), do: do_intcode(codes, inputs, 0, codes, [])
 
-  @target 19690720
+  def do_intcode(instructions, inputs, instruction_pointer, codes, outputs)
 
-  def intcode(codes), do: do_intcode(codes, 0, codes)
+  def do_intcode([], _, _, _, []), do: :error
 
-  def do_intcode(instructions, position, codes)
+  def do_intcode([], _, _, _, outputs) do
+    [diagnostic_code | _] = outputs
 
-  def do_intcode([99 | _], _, codes), do: codes
-
-  def do_intcode([1, first, second, replace_at | _], position, codes) do
-    new_codes = replace_with(:+, [first, second], replace_at, codes)
-    new_position = position + 4
-    new_instructions = Enum.drop(new_codes, new_position)
-
-    do_intcode(new_instructions, new_position, new_codes)
+    diagnostic_code
   end
 
-  def do_intcode([2, first, second, replace_at | _], position, codes) do
-    new_codes = replace_with(:*, [first, second], replace_at, codes)
-    new_position = position + 4
-    new_instructions = Enum.drop(new_codes, new_position)
+  def do_intcode([opcode_mode | rest], inputs, instruction_pointer, codes, outputs) do
+    {opcode, modes} = extract_opcode_and_modes(opcode_mode)
+    {args_used, new_codes, new_inputs, new_outputs} = eval(opcode, modes, Enum.take(rest, 3), inputs, outputs, codes)
 
-    do_intcode(new_instructions, new_position, new_codes)
+    new_instruction_pointer = instruction_pointer + 1 + args_used
+    new_instructions = Enum.drop(new_codes, new_instruction_pointer)
+
+    do_intcode(new_instructions, new_inputs, new_instruction_pointer, new_codes, new_outputs)
   end
 
-  defp replace_with(op, args, index, codes) do
-    new_value = apply(Kernel, op, args |> Enum.map(fn idx -> Enum.at(codes, idx) end))
+  defp extract_opcode_and_modes(mask) do
+    digits = Integer.digits(mask) |> Enum.reverse
 
-    List.replace_at(codes, index, new_value)
+    opcode = digits |> Enum.take(2) |> Enum.reverse
+    modes = digits |> Enum.drop(2)
+
+    {zero_pad_opcode(opcode), zero_pad_modes(modes)}
   end
 
-  def old_part_one do
-    new_codes = read_line_of_cs_ints("02") |> List.replace_at(1, 12) |> List.replace_at(2, 2)
-    [result | _] = intcode(new_codes)
-    result
+  defp zero_pad_modes([]), do: [0, 0, 0]
+  defp zero_pad_modes([m]), do: [m, 0, 0]
+  defp zero_pad_modes([m, n]), do: [m, n, 0]
+  defp zero_pad_modes(modes), do: modes
+
+  defp zero_pad_opcode([o]), do: [0, o]
+  defp zero_pad_opcode(opcode), do: opcode
+
+  defp eval(opcode, modes, args, inputs, outputs, codes)
+
+  defp eval([0, 1], [mode1, mode2, _ | _], [arg1, arg2, arg3 | _], inputs, outputs, codes) do
+    new_value = value_of(codes, mode1, arg1) + value_of(codes, mode2, arg2)
+    new_codes = List.replace_at(codes, arg3, new_value)
+
+    {3, new_codes, inputs, outputs}
   end
 
-  def old_part_two do
-    codes = read_line_of_cs_ints("02")
+  defp eval([0, 2], [mode1, mode2, _ | _], [arg1, arg2, arg3 | _], inputs, outputs, codes) do
+    new_value = value_of(codes, mode1, arg1) * value_of(codes, mode2, arg2)
+    new_codes = List.replace_at(codes, arg3, new_value)
 
-    options = for noun <- 0..99, verb <- 0..99, into: [], do: {noun, verb}
-
-    {noun, verb} = Enum.find(options, :none_found, fn {noun, verb} ->
-      new_codes = codes |> List.replace_at(1, noun) |> List.replace_at(2, verb)
-      [result | _] = intcode(new_codes)
-
-      result == @target
-    end)
-
-    100 * noun + verb
+    {3, new_codes, inputs, outputs}
   end
+
+  defp eval([0, 3], _modes, [index | _], [input | new_inputs], outputs, codes) do
+    new_codes = List.replace_at(codes, index, input)
+
+    {1, new_codes, new_inputs, outputs}
+  end
+
+  defp eval([0, 4], _modes, [index | _], inputs, outputs, codes) do
+    value = Enum.at(codes, index)
+
+    {1, codes, inputs, [value | outputs]}
+  end
+
+  defp eval([9, 9], _modes, _args, inputs, outputs, codes) do
+    {length(codes), codes, inputs, outputs}
+  end
+
+  defp value_of(codes, 0, index), do: Enum.at(codes, index)
+  defp value_of(_codes, 1, value), do: value
 end
