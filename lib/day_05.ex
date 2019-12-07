@@ -49,7 +49,51 @@ Finally, the program will output a diagnostic code and immediately halt. This fi
 
 After providing 1 to the only input instruction and passing all the tests, what diagnostic code does the program produce?
 
+--- Part Two ---
+
+The air conditioner comes online! Its cold air feels good for a while, but then the TEST alarms start to go off. Since the air conditioner can't vent its heat anywhere but back into the spacecraft, it's actually making the air inside the ship warmer.
+
+Instead, you'll need to use the TEST to extend the thermal radiators. Fortunately, the diagnostic program (your puzzle input) is already equipped for this. Unfortunately, your Intcode computer is not.
+
+Your computer is only missing a few opcodes:
+
+Opcode 5 is jump-if-true: if the first parameter is non-zero, it sets the instruction pointer to the value from the second parameter. Otherwise, it does nothing.
+
+Opcode 6 is jump-if-false: if the first parameter is zero, it sets the instruction pointer to the value from the second parameter. Otherwise, it does nothing.
+
+Opcode 7 is less than: if the first parameter is less than the second parameter, it stores 1 in the position given by the third parameter. Otherwise, it stores 0.
+
+Opcode 8 is equals: if the first parameter is equal to the second parameter, it stores 1 in the position given by the third parameter. Otherwise, it stores 0.
+
+Like all instructions, these instructions need to support parameter modes as described above.
+
+Normally, after an instruction is finished, the instruction pointer increases by the number of values in that instruction. However, if the instruction modifies the instruction pointer, that value is used and the instruction pointer is not automatically increased.
+
+For example, here are several programs that take one input, compare it to the value 8, and then produce one output:
+
+3,9,8,9,10,9,4,9,99,-1,8 - Using position mode, consider whether the input is equal to 8; output 1 (if it is) or 0 (if it is not).
+3,9,7,9,10,9,4,9,99,-1,8 - Using position mode, consider whether the input is less than 8; output 1 (if it is) or 0 (if it is not).
+3,3,1108,-1,8,3,4,3,99 - Using immediate mode, consider whether the input is equal to 8; output 1 (if it is) or 0 (if it is not).
+3,3,1107,-1,8,3,4,3,99 - Using immediate mode, consider whether the input is less than 8; output 1 (if it is) or 0 (if it is not).
+
+Here are some jump tests that take an input, then output 0 if the input was zero or 1 if the input was non-zero:
+
+3,12,6,12,15,1,13,14,13,4,13,99,-1,0,1,9 (using position mode)
+3,3,1105,-1,9,1101,0,0,12,4,12,99,1 (using immediate mode)
+Here's a larger example:
+
+3,21,1008,21,8,20,1005,20,22,107,8,21,20,1006,20,31,
+1106,0,36,98,0,0,1002,21,125,20,4,20,1105,1,46,104,
+999,1105,1,46,1101,1000,1,20,4,20,1105,1,46,98,99
+The above example program uses an input instruction to ask for a single number. The program will then output 999 if the input value is below 8, output 1000 if the input value is equal to 8, or output 1001 if the input value is greater than 8.
+
+This time, when the TEST diagnostic program runs its input instruction to get the ID of the system to test, provide it 5, the ID for the ship's thermal radiator controller. This diagnostic test suite only outputs one number, the diagnostic code.
+
+What is the diagnostic code for system ID 5?
+
 """
+  @max_opcode_args 3
+
   def intcode(codes, inputs), do: do_intcode(codes, inputs, 0, codes, [])
 
   def do_intcode(instructions, inputs, instruction_pointer, codes, outputs)
@@ -62,63 +106,111 @@ After providing 1 to the only input instruction and passing all the tests, what 
     diagnostic_code
   end
 
-  def do_intcode([opcode_mode | rest], inputs, instruction_pointer, codes, outputs) do
-    {opcode, modes} = extract_opcode_and_modes(opcode_mode)
-    {args_used, new_codes, new_inputs, new_outputs} = eval(opcode, modes, Enum.take(rest, 3), inputs, outputs, codes)
+  def do_intcode([opcode_mask | rest], inputs, instruction_pointer, codes, outputs) do
+    {opcode, modes} = parse_opcode(opcode_mask)
+    {ip_update, new_codes, new_inputs, new_outputs} =
+      eval(opcode, modes, Enum.take(rest, @max_opcode_args), inputs, outputs, codes)
 
-    new_instruction_pointer = instruction_pointer + 1 + args_used
+    new_instruction_pointer = update_instruction_pointer(ip_update, instruction_pointer + 1)
     new_instructions = Enum.drop(new_codes, new_instruction_pointer)
 
     do_intcode(new_instructions, new_inputs, new_instruction_pointer, new_codes, new_outputs)
   end
 
-  defp extract_opcode_and_modes(mask) do
+  def parse_opcode(mask) do
     digits = Integer.digits(mask) |> Enum.reverse
 
-    opcode = digits |> Enum.take(2) |> Enum.reverse
-    modes = digits |> Enum.drop(2)
+    opcode = digits |> Enum.take(2) |> Enum.reverse |> normalize_opcode
+    modes = digits |> Enum.drop(2) |> normalize_modes
 
-    {zero_pad_opcode(opcode), zero_pad_modes(modes)}
+    {opcode, modes}
   end
 
-  defp zero_pad_modes([]), do: [0, 0, 0]
-  defp zero_pad_modes([m]), do: [m, 0, 0]
-  defp zero_pad_modes([m, n]), do: [m, n, 0]
-  defp zero_pad_modes(modes), do: modes
+  defp normalize_modes([]), do: {0, 0, 0}
+  defp normalize_modes([m]), do: {m, 0, 0}
+  defp normalize_modes([m, n]), do: {m, n, 0}
+  defp normalize_modes([m, n, o]), do: {m, n, o}
 
-  defp zero_pad_opcode([o]), do: [0, o]
-  defp zero_pad_opcode(opcode), do: opcode
+  defp normalize_opcode([o]), do: normalize_opcode([0, o])
+  defp normalize_opcode([0, 1]), do: :add
+  defp normalize_opcode([0, 2]), do: :multiply
+  defp normalize_opcode([0, 3]), do: :save_input
+  defp normalize_opcode([0, 4]), do: :write_output
+  defp normalize_opcode([0, 5]), do: :jump_if_true
+  defp normalize_opcode([0, 6]), do: :jump_if_false
+  defp normalize_opcode([0, 7]), do: :less_than
+  defp normalize_opcode([0, 8]), do: :equal
+  defp normalize_opcode([9, 9]), do: :abort
+
+  defp update_instruction_pointer({:inc, value}, ip), do: value + ip
+  defp update_instruction_pointer({:set, value}, _ip), do: value
 
   defp eval(opcode, modes, args, inputs, outputs, codes)
 
-  defp eval([0, 1], [mode1, mode2, _ | _], [arg1, arg2, arg3 | _], inputs, outputs, codes) do
+  defp eval(:add, {mode1, mode2, _}, [arg1, arg2, arg3 | _], inputs, outputs, codes) do
     new_value = value_of(codes, mode1, arg1) + value_of(codes, mode2, arg2)
     new_codes = List.replace_at(codes, arg3, new_value)
 
-    {3, new_codes, inputs, outputs}
+    {{:inc, 3}, new_codes, inputs, outputs}
   end
 
-  defp eval([0, 2], [mode1, mode2, _ | _], [arg1, arg2, arg3 | _], inputs, outputs, codes) do
+  defp eval(:multiply, {mode1, mode2, _}, [arg1, arg2, arg3 | _], inputs, outputs, codes) do
     new_value = value_of(codes, mode1, arg1) * value_of(codes, mode2, arg2)
     new_codes = List.replace_at(codes, arg3, new_value)
 
-    {3, new_codes, inputs, outputs}
+    {{:inc, 3}, new_codes, inputs, outputs}
   end
 
-  defp eval([0, 3], _modes, [index | _], [input | new_inputs], outputs, codes) do
+  defp eval(:save_input, _modes, [index | _], [input | new_inputs], outputs, codes) do
     new_codes = List.replace_at(codes, index, input)
 
-    {1, new_codes, new_inputs, outputs}
+    {{:inc, 1}, new_codes, new_inputs, outputs}
   end
 
-  defp eval([0, 4], _modes, [index | _], inputs, outputs, codes) do
+  defp eval(:write_output, _modes, [index | _], inputs, outputs, codes) do
     value = Enum.at(codes, index)
 
-    {1, codes, inputs, [value | outputs]}
+    {{:inc, 1}, codes, inputs, [value | outputs]}
   end
 
-  defp eval([9, 9], _modes, _args, inputs, outputs, codes) do
-    {length(codes), codes, inputs, outputs}
+  defp eval(:jump_if_true, {mode1, mode2, _}, [arg1, arg2 | _], inputs, outputs, codes) do
+    if value_of(codes, mode1, arg1) == 0 do
+      # no-op
+      {{:inc, 0}, codes, inputs, outputs}
+    else
+      new_ip = value_of(codes, mode2, arg2)
+
+      {{:set, new_ip}, codes, inputs, outputs}
+    end
+  end
+
+  defp eval(:jump_if_false, {mode1, mode2, _}, [arg1, arg2 | _], inputs, outputs, codes) do
+    if value_of(codes, mode1, arg1) == 0 do
+      new_ip = value_of(codes, mode2, arg2)
+
+      {{:set, new_ip}, codes, inputs, outputs}
+    else
+      # no-op
+      {{:inc, 0}, codes, inputs, outputs}
+    end
+  end
+
+  defp eval(:less_than, {mode1, mode2, _}, [arg1, arg2, arg3| _], inputs, outputs, codes) do
+    new_value = if value_of(codes, mode1, arg1) < value_of(codes, mode2, arg2), do: 1, else: 0
+    new_codes = List.replace_at(codes, arg3, new_value)
+
+    {{:inc, 3}, new_codes, inputs, outputs}
+  end
+
+  defp eval(:equal, {mode1, mode2, _}, [arg1, arg2, arg3| _], inputs, outputs, codes) do
+    new_value = if value_of(codes, mode1, arg1) == value_of(codes, mode2, arg2), do: 1, else: 0
+    new_codes = List.replace_at(codes, arg3, new_value)
+
+    {{:inc, 3}, new_codes, inputs, outputs}
+  end
+
+  defp eval(:abort, _modes, _args, inputs, outputs, codes) do
+    {{:inc, length(codes)}, codes, inputs, outputs}
   end
 
   defp value_of(codes, 0, index), do: Enum.at(codes, index)
