@@ -10,6 +10,7 @@ The Thermal Environment Supervision Terminal (TEST) starts by running a diagnost
 First, you'll need to add two new instructions:
 
 Opcode 3 takes a single integer as input and saves it to the position given by its only parameter. For example, the instruction 3,50 would take an input value and store it at address 50.
+
 Opcode 4 outputs the value of its only parameter. For example, the instruction 4,50 would output the value at address 50.
 Programs that use these instructions will come with documentation that explains what should be connected to the input and output. The program 3,0,4,0,99 outputs whatever it gets as input, then halts.
 
@@ -107,6 +108,9 @@ What is the diagnostic code for system ID 5?
   end
 
   def do_intcode([opcode_mask | rest], inputs, instruction_pointer, codes, outputs) do
+    # Uncomment to trace
+    # IO.puts "#{instruction_pointer} #{inspect codes}"
+
     {opcode, modes} = parse_opcode(opcode_mask)
     {ip_update, new_codes, new_inputs, new_outputs} =
       eval(opcode, modes, Enum.take(rest, @max_opcode_args), inputs, outputs, codes)
@@ -167,8 +171,8 @@ What is the diagnostic code for system ID 5?
     {{:inc, 1}, new_codes, new_inputs, outputs}
   end
 
-  defp eval(:write_output, _modes, [index | _], inputs, outputs, codes) do
-    value = Enum.at(codes, index)
+  defp eval(:write_output, {mode, _, _}, [index | _], inputs, outputs, codes) do
+    value = value_of(codes, mode, index)
 
     {{:inc, 1}, codes, inputs, [value | outputs]}
   end
@@ -176,7 +180,7 @@ What is the diagnostic code for system ID 5?
   defp eval(:jump_if_true, {mode1, mode2, _}, [arg1, arg2 | _], inputs, outputs, codes) do
     if value_of(codes, mode1, arg1) == 0 do
       # no-op
-      {{:inc, 0}, codes, inputs, outputs}
+      {{:inc, 2}, codes, inputs, outputs}
     else
       new_ip = value_of(codes, mode2, arg2)
 
@@ -191,7 +195,7 @@ What is the diagnostic code for system ID 5?
       {{:set, new_ip}, codes, inputs, outputs}
     else
       # no-op
-      {{:inc, 0}, codes, inputs, outputs}
+      {{:inc, 2}, codes, inputs, outputs}
     end
   end
 
