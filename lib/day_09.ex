@@ -40,14 +40,25 @@ Once your Intcode computer is fully functional, the BOOST program should report 
 defmodule IntcodeState do
     defstruct state: :running, code: [], instruction_pointer: 0, inputs: [], outputs: []
 
-    def diagnostic_code(state), do: hd(state.outputs)
+    def diagnostic_code(state) do
+      cond do
+        Enum.any?(state.outputs) ->
+          hd(state.outputs)
+
+        Enum.any?(state.inputs) ->
+          hd(state.inputs)
+
+        true ->
+          raise "No diagnostic code could be found"
+      end
+    end
 
     def next_opcode_and_modes(state) do
       opcode_mask = next_instruction(state)
       digits = Integer.digits(opcode_mask) |> Enum.reverse
 
       opcode = digits |> Enum.take(2) |> Enum.reverse |> normalize_opcode
-      modes = digits |> Enum.drop(2) |> normalize_modes |> Enum.map(&translate_mode/1)
+      modes = digits |> Enum.drop(2) |> normalize_modes
 
       {opcode, modes}
     end
@@ -71,10 +82,10 @@ defmodule IntcodeState do
     defp normalize_opcode([0, 8]), do: :equal
     defp normalize_opcode([9, 9]), do: :abort
 
-    defp normalize_modes([]), do: {0, 0, 0}
-    defp normalize_modes([m]), do: {m, 0, 0}
-    defp normalize_modes([m, n]), do: {m, n, 0}
-    defp normalize_modes([m, n, o]), do: {m, n, o}
+    defp normalize_modes([]), do: {:position_mode, :position_mode, :position_mode}
+    defp normalize_modes([m]), do: {translate_mode(m), :position_mode, :position_mode}
+    defp normalize_modes([m, n]), do: {translate_mode(m), translate_mode(n), :position_mode}
+    defp normalize_modes([m, n, o]), do: {translate_mode(m), translate_mode(n), translate_mode(o)}
 
     defp translate_mode(0), do: :position_mode
     defp translate_mode(1), do: :parameter_mode
@@ -83,7 +94,9 @@ defmodule IntcodeState do
 
   @max_opcode_args 3
 
-  def intcode(code, inputs), do: do_intcode(%IntcodeState{code: code, inputs: inputs})
+  def intcode_stepwise(code, inputs), do: do_intcode(%IntcodeState{code: code, inputs: inputs})
+
+  def intcode_halt(code, inputs), do: run_until_halted(%IntcodeState{code: code, inputs: inputs})
 
   defp do_intcode(state = %IntcodeState{state: :running}) do
     new_state = process(state)
@@ -95,6 +108,16 @@ defmodule IntcodeState do
         {:wrote_output, IntcodeState.diagnostic_code(new_state), new_state}
       :running ->
         do_intcode(new_state)
+    end
+  end
+
+  defp run_until_halted(state) do
+    case do_intcode(state) do
+      {:halted, diagnostic_code} ->
+        diagnostic_code
+      {:wrote_output, _, output_state} ->
+        new_state = %{output_state | state: :running}
+        run_until_halted(new_state)
     end
   end
 
