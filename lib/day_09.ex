@@ -126,109 +126,111 @@ defmodule IntcodeState do
     {opcode, modes} = IntcodeState.next_opcode_and_modes(state)
     args = IntcodeState.next_args(state, @max_opcode_args)
 
-    {ip_update, new_code, new_inputs, new_outputs, new_relative_base} = eval(
+    eval(
       opcode,
       modes,
       args,
-      state.inputs,
-      state.outputs, # TODO: this probably isn't necessary
-      state.code,
-      state.relative_base
+      %{state | instruction_pointer: state.instruction_pointer + 1}
     )
+  end
 
-    new_instruction_pointer = update_instruction_pointer(ip_update, state.instruction_pointer + 1)
-    new_state =
-      case opcode do
-        :write_output -> :wrote_output
-        :abort -> :halted
-        _ -> :running
-      end
+  defp eval(opcode, modes, args, state)
 
-    %IntcodeState{
-      state: new_state,
+  defp eval(:add, {mode1, mode2, _}, [arg1, arg2, arg3 | _], state) do
+    new_value = value_of(state.code, mode1, arg1, state.relative_base) + value_of(state.code, mode2, arg2, state.relative_base)
+    new_code = List.replace_at(state.code, arg3, new_value)
+
+    %{state |
       code: new_code,
-      instruction_pointer: new_instruction_pointer,
-      inputs: new_inputs,
-      outputs: new_outputs,
+      instruction_pointer: state.instruction_pointer + 3
+    }
+  end
+
+  defp eval(:multiply, {mode1, mode2, _}, [arg1, arg2, arg3 | _], state) do
+    new_value = value_of(state.code, mode1, arg1, state.relative_base) * value_of(state.code, mode2, arg2, state.relative_base)
+    new_code = List.replace_at(state.code, arg3, new_value)
+
+
+    %{state |
+      code: new_code,
+      instruction_pointer: state.instruction_pointer + 3
+    }
+  end
+
+  defp eval(:save_input, _modes, [index | _], state = %IntcodeState{inputs: [input | new_inputs]}) do
+    new_code = List.replace_at(state.code, index, input)
+
+    %{state |
+      code: new_code,
+      instruction_pointer: state.instruction_pointer + 1,
+      inputs: new_inputs
+    }
+  end
+
+  defp eval(:write_output, {mode, _, _}, [index | _], state) do
+    value = value_of(state.code, mode, index, state.relative_base)
+
+    %{ state |
+       state: :wrote_output,
+       instruction_pointer: state.instruction_pointer + 1,
+       outputs: [value | state.outputs]
+    }
+  end
+
+  defp eval(:jump_if_true, {mode1, mode2, _}, [arg1, arg2 | _], state) do
+    if value_of(state.code, mode1, arg1, state.relative_base) == 0 do
+      # no-op
+      %{state | instruction_pointer: state.instruction_pointer + 2}
+    else
+      new_ip = value_of(state.code, mode2, arg2, state.relative_base)
+
+      %{state | instruction_pointer: new_ip}
+    end
+  end
+
+  defp eval(:jump_if_false, {mode1, mode2, _}, [arg1, arg2 | _], state) do
+    if value_of(state.code, mode1, arg1, state.relative_base) == 0 do
+      new_ip = value_of(state.code, mode2, arg2, state.relative_base)
+
+      %{state | instruction_pointer: new_ip}
+    else
+      # no-op
+      %{state | instruction_pointer: state.instruction_pointer + 2}
+    end
+  end
+
+  defp eval(:less_than, {mode1, mode2, _}, [arg1, arg2, arg3| _], state) do
+    new_value = if value_of(state.code, mode1, arg1, state.relative_base) < value_of(state.code, mode2, arg2, state.relative_base), do: 1, else: 0
+    new_code = List.replace_at(state.code, arg3, new_value)
+
+    %{state |
+      instruction_pointer: state.instruction_pointer + 3,
+      code: new_code
+    }
+  end
+
+  defp eval(:equal, {mode1, mode2, _}, [arg1, arg2, arg3| _], state) do
+    new_value = if value_of(state.code, mode1, arg1, state.relative_base) == value_of(state.code, mode2, arg2, state.relative_base), do: 1, else: 0
+    new_code = List.replace_at(state.code, arg3, new_value)
+
+    %{state |
+      instruction_pointer: state.instruction_pointer + 3,
+      code: new_code
+    }
+  end
+
+  defp eval(:relative_base_offset, {mode1, _, _}, [arg1 | _], state) do
+    new_relative_base = value_of(state.code, mode1, arg1, state.relative_base)
+
+    %{state |
+      instruction_pointer: state.instruction_pointer + 1,
       relative_base: new_relative_base
     }
   end
 
-  defp update_instruction_pointer({:inc, value}, ip), do: value + ip
-  defp update_instruction_pointer({:set, value}, _ip), do: value
-
-  defp eval(opcode, modes, args, inputs, outputs, codes, relative_base)
-
-  defp eval(:add, {mode1, mode2, _}, [arg1, arg2, arg3 | _], inputs, outputs, codes, relative_base) do
-    new_value = value_of(codes, mode1, arg1, relative_base) + value_of(codes, mode2, arg2, relative_base)
-    new_codes = List.replace_at(codes, arg3, new_value)
-
-    {{:inc, 3}, new_codes, inputs, outputs, relative_base}
-  end
-
-  defp eval(:multiply, {mode1, mode2, _}, [arg1, arg2, arg3 | _], inputs, outputs, codes, relative_base) do
-    new_value = value_of(codes, mode1, arg1, relative_base) * value_of(codes, mode2, arg2, relative_base)
-    new_codes = List.replace_at(codes, arg3, new_value)
-
-    {{:inc, 3}, new_codes, inputs, outputs, relative_base}
-  end
-
-  defp eval(:save_input, _modes, [index | _], [input | new_inputs], outputs, codes, relative_base) do
-    new_codes = List.replace_at(codes, index, input)
-
-    {{:inc, 1}, new_codes, new_inputs, outputs, relative_base}
-  end
-
-  defp eval(:write_output, {mode, _, _}, [index | _], inputs, outputs, codes, relative_base) do
-    value = value_of(codes, mode, index, relative_base)
-
-    {{:inc, 1}, codes, inputs, [value | outputs], relative_base}
-  end
-
-  defp eval(:jump_if_true, {mode1, mode2, _}, [arg1, arg2 | _], inputs, outputs, codes, relative_base) do
-    if value_of(codes, mode1, arg1, relative_base) == 0 do
-      # no-op
-      {{:inc, 2}, codes, inputs, outputs, relative_base}
-    else
-      new_ip = value_of(codes, mode2, arg2, relative_base)
-
-      {{:set, new_ip}, codes, inputs, outputs, relative_base}
-    end
-  end
-
-  defp eval(:jump_if_false, {mode1, mode2, _}, [arg1, arg2 | _], inputs, outputs, codes, relative_base) do
-    if value_of(codes, mode1, arg1, relative_base) == 0 do
-      new_ip = value_of(codes, mode2, arg2, relative_base)
-
-      {{:set, new_ip}, codes, inputs, outputs, relative_base}
-    else
-      # no-op
-      {{:inc, 2}, codes, inputs, outputs, relative_base}
-    end
-  end
-
-  defp eval(:less_than, {mode1, mode2, _}, [arg1, arg2, arg3| _], inputs, outputs, codes, relative_base) do
-    new_value = if value_of(codes, mode1, arg1, relative_base) < value_of(codes, mode2, arg2, relative_base), do: 1, else: 0
-    new_codes = List.replace_at(codes, arg3, new_value)
-
-    {{:inc, 3}, new_codes, inputs, outputs, relative_base}
-  end
-
-  defp eval(:equal, {mode1, mode2, _}, [arg1, arg2, arg3| _], inputs, outputs, codes, relative_base) do
-    new_value = if value_of(codes, mode1, arg1, relative_base) == value_of(codes, mode2, arg2, relative_base), do: 1, else: 0
-    new_codes = List.replace_at(codes, arg3, new_value)
-
-    {{:inc, 3}, new_codes, inputs, outputs, relative_base}
-  end
-
-  defp eval(:relative_base_offset, {mode1, _, _}, [arg1 | _], inputs, outputs, codes, relative_base) do
-    new_relative_base = value_of(codes, mode1, arg1, relative_base)
-
-    {{:inc, 1}, codes, inputs, outputs, new_relative_base}
-  end
-
-  defp eval(:abort, _modes, _args, inputs, outputs, codes, relative_base) do
-    {{:inc, length(codes)}, codes, inputs, outputs, relative_base}
+  defp eval(:abort, _modes, _args, state) do
+    # TODO: maybe move inputs to outputs here?
+    %{state | state: :halted}
   end
 
   defp value_of(codes, :position_mode, index, _relative_base), do: Enum.at(codes, index)
