@@ -44,58 +44,93 @@ Max thruster signal 65210 (from phase setting sequence 1,0,4,3,2):
 Try every combination of phase settings on the amplifiers. What is the highest signal that can be sent to the thrusters?
 
 """
+  defmodule IntcodeState do
+    defstruct state: :running, code: [], instruction_pointer: 0, inputs: [], outputs: []
+
+    def diagnostic_code(state), do: hd(state.outputs)
+
+    def next_opcode_and_modes(state) do
+      opcode_mask = next_instruction(state)
+      digits = Integer.digits(opcode_mask) |> Enum.reverse
+
+      opcode = digits |> Enum.take(2) |> Enum.reverse |> normalize_opcode
+      # TODO: normalize modes to symbols
+      modes = digits |> Enum.drop(2) |> normalize_modes
+
+      {opcode, modes}
+    end
+
+    def next_args(state, number) when is_integer(number) do
+      Enum.drop(state.code, state.instruction_pointer + 1) |> Enum.take(number)
+    end
+
+    defp next_instruction(state) do
+      Enum.drop(state.code, state.instruction_pointer) |> hd
+    end
+
+    defp normalize_opcode([o]), do: normalize_opcode([0, o])
+    defp normalize_opcode([0, 1]), do: :add
+    defp normalize_opcode([0, 2]), do: :multiply
+    defp normalize_opcode([0, 3]), do: :save_input
+    defp normalize_opcode([0, 4]), do: :write_output
+    defp normalize_opcode([0, 5]), do: :jump_if_true
+    defp normalize_opcode([0, 6]), do: :jump_if_false
+    defp normalize_opcode([0, 7]), do: :less_than
+    defp normalize_opcode([0, 8]), do: :equal
+    defp normalize_opcode([9, 9]), do: :abort
+
+    defp normalize_modes([]), do: {0, 0, 0}
+    defp normalize_modes([m]), do: {m, 0, 0}
+    defp normalize_modes([m, n]), do: {m, n, 0}
+    defp normalize_modes([m, n, o]), do: {m, n, o}
+  end
+
   @max_opcode_args 3
 
-  def intcode(codes, inputs), do: do_intcode(codes, inputs, 0, codes, [])
+  def intcode(code, inputs), do: do_intcode(%IntcodeState{code: code, inputs: inputs})
 
-  defp do_intcode(instructions, inputs, instruction_pointer, codes, outputs)
+  defp do_intcode(state = %IntcodeState{state: :running}) do
+    new_state = process(state)
 
-  defp do_intcode([], _, _, _, []), do: :error
-
-  defp do_intcode([], _, _, _, outputs) do
-    [diagnostic_code | _] = outputs
-
-    diagnostic_code
+    case new_state.state do
+      :halted ->
+        {:halted, IntcodeState.diagnostic_code(new_state)}
+      :wrote_output ->
+        {:wrote_output, IntcodeState.diagnostic_code(new_state), new_state}
+      :running ->
+        do_intcode(new_state)
+    end
   end
 
-  defp do_intcode([opcode_mask | rest], inputs, instruction_pointer, codes, outputs) do
-    # Uncomment to trace
-    # IO.puts "#{instruction_pointer} #{inspect codes}"
+  defp process(state) do
+    {opcode, modes} = IntcodeState.next_opcode_and_modes(state)
+    args = IntcodeState.next_args(state, @max_opcode_args)
 
-    {opcode, modes} = parse_opcode(opcode_mask)
-    {ip_update, new_codes, new_inputs, new_outputs} =
-      eval(opcode, modes, Enum.take(rest, @max_opcode_args), inputs, outputs, codes)
+    {ip_update, new_code, new_inputs, new_outputs} = eval(
+      opcode,
+      modes,
+      args,
+      state.inputs,
+      state.outputs, # TODO: this probably isn't necessary
+      state.code
+    )
 
-    new_instruction_pointer = update_instruction_pointer(ip_update, instruction_pointer + 1)
-    new_instructions = Enum.drop(new_codes, new_instruction_pointer)
+    new_instruction_pointer = update_instruction_pointer(ip_update, state.instruction_pointer + 1)
+    new_state =
+      case opcode do
+        :write_output -> :wrote_output
+        :abort -> :halted
+        _ -> :running
+      end
 
-    do_intcode(new_instructions, new_inputs, new_instruction_pointer, new_codes, new_outputs)
+    %IntcodeState{
+      state: new_state,
+      code: new_code,
+      instruction_pointer: new_instruction_pointer,
+      inputs: new_inputs,
+      outputs: new_outputs
+    }
   end
-
-  def parse_opcode(mask) do
-    digits = Integer.digits(mask) |> Enum.reverse
-
-    opcode = digits |> Enum.take(2) |> Enum.reverse |> normalize_opcode
-    modes = digits |> Enum.drop(2) |> normalize_modes
-
-    {opcode, modes}
-  end
-
-  defp normalize_modes([]), do: {0, 0, 0}
-  defp normalize_modes([m]), do: {m, 0, 0}
-  defp normalize_modes([m, n]), do: {m, n, 0}
-  defp normalize_modes([m, n, o]), do: {m, n, o}
-
-  defp normalize_opcode([o]), do: normalize_opcode([0, o])
-  defp normalize_opcode([0, 1]), do: :add
-  defp normalize_opcode([0, 2]), do: :multiply
-  defp normalize_opcode([0, 3]), do: :save_input
-  defp normalize_opcode([0, 4]), do: :write_output
-  defp normalize_opcode([0, 5]), do: :jump_if_true
-  defp normalize_opcode([0, 6]), do: :jump_if_false
-  defp normalize_opcode([0, 7]), do: :less_than
-  defp normalize_opcode([0, 8]), do: :equal
-  defp normalize_opcode([9, 9]), do: :abort
 
   defp update_instruction_pointer({:inc, value}, ip), do: value + ip
   defp update_instruction_pointer({:set, value}, _ip), do: value
@@ -172,13 +207,25 @@ Try every combination of phase settings on the amplifiers. What is the highest s
   defp value_of(_codes, 1, value), do: value
 
   def run_amplification_circuit(code, [a, b, c, d, e]) do
-    output1 = intcode(code, [a, 0])
-    output2 = intcode(code, [b, output1])
-    output3 = intcode(code, [c, output2])
-    output4 = intcode(code, [d, output3])
-    output5 = intcode(code, [e, output4])
+    output1 = run_until_halted(code, [a, 0])
+    output2 = run_until_halted(code, [b, output1])
+    output3 = run_until_halted(code, [c, output2])
+    output4 = run_until_halted(code, [d, output3])
+    output5 = run_until_halted(code, [e, output4])
 
     output5
+  end
+
+  defp run_until_halted(code, inputs), do: do_run_until_halted(%IntcodeState{code: code, inputs: inputs})
+
+  defp do_run_until_halted(state) do
+    case do_intcode(state) do
+      {:halted, diagnostic_code} ->
+        diagnostic_code
+      {:wrote_output, _, output_state} ->
+        new_state = %{output_state | state: :running}
+        do_run_until_halted(new_state)
+    end
   end
 
   def max_amplification(code, max) when is_integer(max) do
