@@ -67,6 +67,12 @@ defmodule IntcodeState do
       Enum.drop(state.code, state.instruction_pointer + 1) |> Enum.take(number)
     end
 
+    def value_of(state, index, mode)
+
+    def value_of(state, index, :position_mode), do: Enum.at(state.code, index)
+    def value_of(_state, value, :parameter_mode), do: value
+    def value_of(state, index, :relative_mode), do: Enum.at(state.code, state.relative_base + index)
+
     defp next_instruction(state) do
       Enum.drop(state.code, state.instruction_pointer) |> hd
     end
@@ -137,7 +143,7 @@ defmodule IntcodeState do
   defp eval(opcode, modes, args, state)
 
   defp eval(:add, {mode1, mode2, _}, [arg1, arg2, arg3 | _], state) do
-    new_value = value_of(state.code, mode1, arg1, state.relative_base) + value_of(state.code, mode2, arg2, state.relative_base)
+    new_value = IntcodeState.value_of(state, arg1, mode1) + IntcodeState.value_of(state, arg2, mode2)
     new_code = List.replace_at(state.code, arg3, new_value)
 
     %{state |
@@ -147,7 +153,7 @@ defmodule IntcodeState do
   end
 
   defp eval(:multiply, {mode1, mode2, _}, [arg1, arg2, arg3 | _], state) do
-    new_value = value_of(state.code, mode1, arg1, state.relative_base) * value_of(state.code, mode2, arg2, state.relative_base)
+    new_value = IntcodeState.value_of(state, arg1, mode1) * IntcodeState.value_of(state, arg2, mode2)
     new_code = List.replace_at(state.code, arg3, new_value)
 
 
@@ -168,9 +174,9 @@ defmodule IntcodeState do
   end
 
   defp eval(:write_output, {mode, _, _}, [index | _], state) do
-    value = value_of(state.code, mode, index, state.relative_base)
+    value = IntcodeState.value_of(state, index, mode)
 
-    %{ state |
+    %{state |
        state: :wrote_output,
        instruction_pointer: state.instruction_pointer + 1,
        outputs: [value | state.outputs]
@@ -178,19 +184,19 @@ defmodule IntcodeState do
   end
 
   defp eval(:jump_if_true, {mode1, mode2, _}, [arg1, arg2 | _], state) do
-    if value_of(state.code, mode1, arg1, state.relative_base) == 0 do
+    if IntcodeState.value_of(state, arg1, mode1) == 0 do
       # no-op
       %{state | instruction_pointer: state.instruction_pointer + 2}
     else
-      new_ip = value_of(state.code, mode2, arg2, state.relative_base)
+      new_ip = IntcodeState.value_of(state, arg2, mode2)
 
       %{state | instruction_pointer: new_ip}
     end
   end
 
   defp eval(:jump_if_false, {mode1, mode2, _}, [arg1, arg2 | _], state) do
-    if value_of(state.code, mode1, arg1, state.relative_base) == 0 do
-      new_ip = value_of(state.code, mode2, arg2, state.relative_base)
+    if IntcodeState.value_of(state, arg1, mode1) == 0 do
+      new_ip = IntcodeState.value_of(state, arg2, mode2)
 
       %{state | instruction_pointer: new_ip}
     else
@@ -200,7 +206,7 @@ defmodule IntcodeState do
   end
 
   defp eval(:less_than, {mode1, mode2, _}, [arg1, arg2, arg3| _], state) do
-    new_value = if value_of(state.code, mode1, arg1, state.relative_base) < value_of(state.code, mode2, arg2, state.relative_base), do: 1, else: 0
+    new_value = if IntcodeState.value_of(state, arg1, mode1) < IntcodeState.value_of(state, arg2, mode2), do: 1, else: 0
     new_code = List.replace_at(state.code, arg3, new_value)
 
     %{state |
@@ -210,7 +216,7 @@ defmodule IntcodeState do
   end
 
   defp eval(:equal, {mode1, mode2, _}, [arg1, arg2, arg3| _], state) do
-    new_value = if value_of(state.code, mode1, arg1, state.relative_base) == value_of(state.code, mode2, arg2, state.relative_base), do: 1, else: 0
+    new_value = if IntcodeState.value_of(state, arg1, mode1) == IntcodeState.value_of(state, arg2, mode2), do: 1, else: 0
     new_code = List.replace_at(state.code, arg3, new_value)
 
     %{state |
@@ -220,7 +226,7 @@ defmodule IntcodeState do
   end
 
   defp eval(:relative_base_offset, {mode1, _, _}, [arg1 | _], state) do
-    new_relative_base = value_of(state.code, mode1, arg1, state.relative_base)
+    new_relative_base = IntcodeState.value_of(state, arg1, mode1)
 
     %{state |
       instruction_pointer: state.instruction_pointer + 1,
@@ -232,8 +238,4 @@ defmodule IntcodeState do
     # TODO: maybe move inputs to outputs here?
     %{state | state: :halted}
   end
-
-  defp value_of(codes, :position_mode, index, _relative_base), do: Enum.at(codes, index)
-  defp value_of(_codes, :parameter_mode, value, _relative_base), do: value
-  defp value_of(codes, :relative_mode, value, relative_base), do: Enum.at(codes, relative_base + value)
 end
