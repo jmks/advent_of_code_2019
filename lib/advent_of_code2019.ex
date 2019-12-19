@@ -1,7 +1,11 @@
 defmodule AdventOfCode2019 do
   def read_input(day) when is_binary(day) do
-    File.read!("data/#{day}")
+    read_raw(day)
     |> String.split("\n", trim: true)
+  end
+
+  def read_raw(day) when is_binary(day) do
+    File.read!("data/#{day}")
   end
 
   def read_line_of_cs_ints(day) do
