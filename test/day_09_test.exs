@@ -43,5 +43,6 @@ defmodule Day09Test do
     assert intcode_output_after_halt(quine, []) == quine
 
     assert intcode_output_after_halt(AdventOfCode2019.read_line_of_cs_ints("09"), [1]) == [3429606717]
+    assert intcode_output_after_halt(AdventOfCode2019.read_line_of_cs_ints("09"), [2]) == [33679]
   end
 end
