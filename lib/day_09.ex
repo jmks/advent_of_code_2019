@@ -27,18 +27,33 @@ Your Intcode computer will also need a few other capabilities:
 
 The computer's available memory should be much larger than the initial program. Memory beyond the initial program starts with the value 0 and can be read or written like any other memory. (It is invalid to try to access memory at a negative address, though.)
 The computer should have support for large numbers. Some instructions near the beginning of the BOOST program will verify this capability.
+
 Here are some example programs that use these features:
 
 109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99 takes no input and produces a copy of itself as output.
 1102,34915192,34915192,7,4,7,99,0 should output a 16-digit number.
 104,1125899906842624,99 should output the large number in the middle.
+
 The BOOST program will ask for a single input; run it in test mode by providing it the value 1. It will perform a series of checks on each opcode, output any opcodes (and the associated parameter modes) that seem to be functioning incorrectly, and finally output a BOOST keycode.
 
 Once your Intcode computer is fully functional, the BOOST program should report no malfunctioning opcodes when run in test mode; it should only output a single value, the BOOST keycode. What BOOST keycode does it produce?
 
 """
 defmodule IntcodeState do
-    defstruct state: :running, code: [], instruction_pointer: 0, inputs: [], outputs: [], relative_base: 0
+    defstruct state: :running, code: %{}, instruction_pointer: 0, inputs: [], outputs: [], relative_base: 0
+
+    def new(code, inputs) when is_list(code) and is_list(inputs) do
+      memory = code
+      |> Enum.with_index
+      |> Enum.reduce(%{}, fn {instruction, index}, mem ->
+        Map.put_new(mem, index, instruction)
+      end)
+
+      %__MODULE__{
+        code: memory,
+        inputs: inputs
+      }
+    end
 
     def diagnostic_code(state) do
       cond do
@@ -64,17 +79,30 @@ defmodule IntcodeState do
     end
 
     def next_args(state, number) when is_integer(number) do
-      Enum.drop(state.code, state.instruction_pointer + 1) |> Enum.take(number)
+      arg_location = state.instruction_pointer+1
+      memory_locations = arg_location..(arg_location+number)
+
+      Enum.map(memory_locations, fn loc ->
+        Map.get(state.code, loc)
+      end)
     end
 
-    def value_of(state, index, mode)
+    def value_of(state, location, mode)
 
-    def value_of(state, index, :position_mode), do: Enum.at(state.code, index)
-    def value_of(_state, value, :parameter_mode), do: value
-    def value_of(state, index, :relative_mode), do: Enum.at(state.code, state.relative_base + index)
+    def value_of(state, location, :position_mode), do: Map.get(state.code, location, 0)
+    def value_of(_state, value, :immediate_mode), do: value
+    def value_of(state, location, :relative_mode), do: Map.get(state.code, state.relative_base + location, 0)
+
+    def write_address(state, value, mode)
+    def write_address(state, value, :relative_mode), do: state.relative_base + value
+    def write_address(_state, value, _), do: value
+
+    def update_code_at(state, location, value) do
+      Map.update(state.code, location, value, fn _old_value -> value end)
+    end
 
     defp next_instruction(state) do
-      Enum.drop(state.code, state.instruction_pointer) |> hd
+      Map.get(state.code, state.instruction_pointer)
     end
 
     defp normalize_opcode([o]), do: normalize_opcode([0, o])
@@ -95,15 +123,19 @@ defmodule IntcodeState do
     defp normalize_modes([m, n, o]), do: {translate_mode(m), translate_mode(n), translate_mode(o)}
 
     defp translate_mode(0), do: :position_mode
-    defp translate_mode(1), do: :parameter_mode
+    defp translate_mode(1), do: :immediate_mode
     defp translate_mode(2), do: :relative_mode
   end
 
   @max_opcode_args 3
 
-  def intcode_stepwise(code, inputs), do: do_intcode(%IntcodeState{code: code, inputs: inputs})
+  def intcode_stepwise(code, inputs), do: do_intcode(IntcodeState.new(code, inputs))
 
-  def intcode_halt(code, inputs), do: run_until_halted(%IntcodeState{code: code, inputs: inputs})
+  def intcode_halt(code, inputs), do: run_until_halted(IntcodeState.new(code, inputs))
+
+  def intcode_output_after_halt(code, inputs) do
+    output_after_halt(IntcodeState.new(code, inputs), [])
+  end
 
   defp do_intcode(state = %IntcodeState{state: :running}) do
     new_state = process(state)
@@ -128,6 +160,19 @@ defmodule IntcodeState do
     end
   end
 
+  defp output_after_halt(state, output_acc) do
+    # IO.inspect state
+    case do_intcode(state) do
+      {:halted, _} ->
+        Enum.reverse(output_acc)
+      {:wrote_output, output, output_state} ->
+        new_state = %{output_state | state: :running}
+        new_output = [output | output_acc]
+
+        output_after_halt(new_state, new_output)
+    end
+  end
+
   defp process(state) do
     {opcode, modes} = IntcodeState.next_opcode_and_modes(state)
     args = IntcodeState.next_args(state, @max_opcode_args)
@@ -142,9 +187,10 @@ defmodule IntcodeState do
 
   defp eval(opcode, modes, args, state)
 
-  defp eval(:add, {mode1, mode2, _}, [arg1, arg2, arg3 | _], state) do
+  defp eval(:add, {mode1, mode2, mode3}, [arg1, arg2, arg3 | _], state) do
     new_value = IntcodeState.value_of(state, arg1, mode1) + IntcodeState.value_of(state, arg2, mode2)
-    new_code = List.replace_at(state.code, arg3, new_value)
+    address = IntcodeState.write_address(state, arg3, mode3)
+    new_code = IntcodeState.update_code_at(state, address, new_value)
 
     %{state |
       code: new_code,
@@ -152,9 +198,10 @@ defmodule IntcodeState do
     }
   end
 
-  defp eval(:multiply, {mode1, mode2, _}, [arg1, arg2, arg3 | _], state) do
+  defp eval(:multiply, {mode1, mode2, mode3}, [arg1, arg2, arg3 | _], state) do
     new_value = IntcodeState.value_of(state, arg1, mode1) * IntcodeState.value_of(state, arg2, mode2)
-    new_code = List.replace_at(state.code, arg3, new_value)
+    address = IntcodeState.write_address(state, arg3, mode3)
+    new_code = IntcodeState.update_code_at(state, address, new_value)
 
 
     %{state |
@@ -163,8 +210,9 @@ defmodule IntcodeState do
     }
   end
 
-  defp eval(:save_input, _modes, [index | _], state = %IntcodeState{inputs: [input | new_inputs]}) do
-    new_code = List.replace_at(state.code, index, input)
+  defp eval(:save_input, {mode, _, _}, [arg | _], state = %IntcodeState{inputs: [input | new_inputs]}) do
+    address = IntcodeState.write_address(state, arg, mode)
+    new_code = IntcodeState.update_code_at(state, address, input)
 
     %{state |
       code: new_code,
@@ -205,9 +253,10 @@ defmodule IntcodeState do
     end
   end
 
-  defp eval(:less_than, {mode1, mode2, _}, [arg1, arg2, arg3| _], state) do
+  defp eval(:less_than, {mode1, mode2, mode3}, [arg1, arg2, arg3| _], state) do
     new_value = if IntcodeState.value_of(state, arg1, mode1) < IntcodeState.value_of(state, arg2, mode2), do: 1, else: 0
-    new_code = List.replace_at(state.code, arg3, new_value)
+    address = IntcodeState.write_address(state, arg3, mode3)
+    new_code = IntcodeState.update_code_at(state, address, new_value)
 
     %{state |
       instruction_pointer: state.instruction_pointer + 3,
@@ -215,9 +264,10 @@ defmodule IntcodeState do
     }
   end
 
-  defp eval(:equal, {mode1, mode2, _}, [arg1, arg2, arg3| _], state) do
+  defp eval(:equal, {mode1, mode2, mode3}, [arg1, arg2, arg3| _], state) do
     new_value = if IntcodeState.value_of(state, arg1, mode1) == IntcodeState.value_of(state, arg2, mode2), do: 1, else: 0
-    new_code = List.replace_at(state.code, arg3, new_value)
+    address = IntcodeState.write_address(state, arg3, mode3)
+    new_code = IntcodeState.update_code_at(state, address, new_value)
 
     %{state |
       instruction_pointer: state.instruction_pointer + 3,
@@ -226,7 +276,7 @@ defmodule IntcodeState do
   end
 
   defp eval(:relative_base_offset, {mode1, _, _}, [arg1 | _], state) do
-    new_relative_base = IntcodeState.value_of(state, arg1, mode1)
+    new_relative_base = state.relative_base + IntcodeState.value_of(state, arg1, mode1)
 
     %{state |
       instruction_pointer: state.instruction_pointer + 1,
