@@ -39,4 +39,8 @@ defmodule Day12Test do
     assert {{2, 0, 4}, {1, -1, -1}} in step_10
     assert Enum.sum(Enum.map(step_10, &energy/1)) == 179
   end
+
+  test "repeated state" do
+    assert repeated_state(with_velocity(@example_positions)) == 2772
+  end
 end
