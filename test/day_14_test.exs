@@ -94,31 +94,31 @@ defmodule Day14Test do
 
   test "depth_to_ore" do
     assert depth_to_ore(parse(@simple_example)) == %{
-      "A" => 1,
-      "B" => 1,
-      "C" => 2,
-      "D" => 3,
-      "E" => 4,
-      "FUEL" => 5
-    }
+             "A" => 1,
+             "B" => 1,
+             "C" => 2,
+             "D" => 3,
+             "E" => 4,
+             "FUEL" => 5
+           }
 
     assert depth_to_ore(parse(@small)) == %{
-      "A" => 1,
-      "AB" => 2,
-      "B" => 1,
-      "BC" => 2,
-      "C" => 1,
-      "CA" => 2,
-      "FUEL" => 3
-    }
+             "A" => 1,
+             "AB" => 2,
+             "B" => 1,
+             "BC" => 2,
+             "C" => 1,
+             "CA" => 2,
+             "FUEL" => 3
+           }
   end
 
   test "reactions" do
     assert ore_for_fuel(1, parse(@simple_example)) == 31
     assert ore_for_fuel(1, parse(@small)) == 165
     assert ore_for_fuel(1, parse(@big)) == 13312
-    assert ore_for_fuel(1, parse(@large)) == 180697
-    assert ore_for_fuel(1, parse(@huge)) == 2210736
+    assert ore_for_fuel(1, parse(@large)) == 180_697
+    assert ore_for_fuel(1, parse(@huge)) == 2_210_736
   end
 
   test "part 1" do

@@ -181,9 +181,11 @@ defmodule Day14 do
       end)
 
     ore_depth = Enum.map(direct_to_ore, fn ch -> {ch, 1} end) |> Enum.into(%{})
-    rest = Enum.reduce(direct_to_ore, reactions, fn ch, acc ->
-      Map.delete(acc, ch)
-    end)
+
+    rest =
+      Enum.reduce(direct_to_ore, reactions, fn ch, acc ->
+        Map.delete(acc, ch)
+      end)
 
     do_depth_to_ore(rest, ore_depth)
   end
@@ -201,17 +203,20 @@ defmodule Day14 do
     if length(reductions) == 0 do
       raise "No reductions possible?"
     else
-      new_depths = Enum.reduce(reductions, depths, fn {chemical, {_, inputs}}, acc ->
-        input_depth =
-          inputs.chemicals
-          |> Enum.map(fn {chemical, _} -> Map.fetch!(depths, chemical) end)
-          |> Enum.max()
+      new_depths =
+        Enum.reduce(reductions, depths, fn {chemical, {_, inputs}}, acc ->
+          input_depth =
+            inputs.chemicals
+            |> Enum.map(fn {chemical, _} -> Map.fetch!(depths, chemical) end)
+            |> Enum.max()
 
-        Map.put(acc, chemical, input_depth + 1)
-      end)
-      new_reactions = Enum.reduce(reductions, reactions, fn {chemical, _}, acc ->
-        Map.delete(acc, chemical)
-      end)
+          Map.put(acc, chemical, input_depth + 1)
+        end)
+
+      new_reactions =
+        Enum.reduce(reductions, reactions, fn {chemical, _}, acc ->
+          Map.delete(acc, chemical)
+        end)
 
       do_depth_to_ore(new_reactions, new_depths)
     end
@@ -251,7 +256,7 @@ defmodule Day14 do
       {qty, _} = Map.fetch!(reactions, chemical)
 
       cond do
-        have >= qty  ->
+        have >= qty ->
           ratio = div(have, qty)
 
           {:whole_ratio, chemical, ratio}
@@ -260,13 +265,16 @@ defmodule Day14 do
           {:consume_leftover, chemical, 1}
       end
     end)
-    |> Enum.sort_by(fn
-      {:whole_ratio, _, _} ->
-        max + 1
+    |> Enum.sort_by(
+      fn
+        {:whole_ratio, _, _} ->
+          max + 1
 
-      {:consume_leftover, chemical, _} ->
-        Map.fetch!(depths, chemical)
-    end, :desc)
+        {:consume_leftover, chemical, _} ->
+          Map.fetch!(depths, chemical)
+      end,
+      :desc
+    )
     |> hd
   end
 
@@ -290,6 +298,7 @@ defmodule Day14 do
       |> String.split(", ", trim: true)
       |> Enum.map(&parse_chemical/1)
       |> Chemicals.new()
+
     chemical = parse_chemical(output)
 
     {chemical, inputs}

@@ -4,14 +4,14 @@ defmodule Day04Test do
   import Day04
 
   test "valid passwords" do
-    assert valid?(111111)
-    refute valid?(223450)
-    refute valid?(123789)
+    assert valid?(111_111)
+    refute valid?(223_450)
+    refute valid?(123_789)
   end
 
   test "stricter, but valid passwords" do
-    assert stricter_valid?(112233)
-    refute stricter_valid?(123444)
-    assert stricter_valid?(111122)
+    assert stricter_valid?(112_233)
+    refute stricter_valid?(123_444)
+    assert stricter_valid?(111_122)
   end
 end
